@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    html {
+        scroll-behavior: smooth;
+    }
+    body {
+        @apply bg-slate-50 text-slate-800 antialiased min-h-screen;
+    }
+}
+
+@layer utilities {
+    .glass {
+        @apply bg-white/90 backdrop-blur-xl border border-slate-200 shadow-lg;
+    }
+    .text-gradient {
+        @apply bg-clip-text text-transparent bg-gradient-to-r from-teal-600 via-cyan-600 to-indigo-600;
+    }
+}
+
+@layer base {
+    /* Light theme compatibility for old dark utility usage */
+    .text-white {
+        color: #0f172a !important;
+    }
+    .bg-accent-coral.text-white,
+    .bg-accent-violet.text-white,
+    .bg-accent-mint.text-white,
+    .bg-indigo-600.text-white,
+    .bg-gradient-to-r.text-white,
+    .from-indigo-600.to-teal-500.text-white {
+        color: #ffffff !important;
+    }
+    .hover\:text-white:hover {
+        color: #0f172a !important;
+    }
+    .text-ink-950 {
+        color: #0f172a !important;
+    }
+    .text-slate-200 {
+        color: #334155 !important;
+    }
+    .text-slate-300 {
+        color: #334155 !important;
+    }
+    .text-slate-400 {
+        color: #334155 !important;
+    }
+    .text-slate-500 {
+        color: #475569 !important;
+    }
+    .text-slate-600 {
+        color: #64748b !important;
+    }
+
+    .bg-ink-950,
+    .bg-ink-900,
+    .bg-ink-800,
+    .bg-ink-700 {
+        background-color: #ffffff !important;
+    }
+    .bg-white\/3,
+    .bg-white\/5 {
+        background-color: rgba(255, 255, 255, 0.82) !important;
+    }
+    .bg-white\/10 {
+        background-color: rgba(255, 255, 255, 0.95) !important;
+    }
+    .hover\:bg-white\/5:hover {
+        background-color: rgba(241, 245, 249, 0.95) !important;
+    }
+    .hover\:bg-white\/10:hover {
+        background-color: rgba(226, 232, 240, 0.95) !important;
+    }
+    .hover\:bg-white\/15:hover {
+        background-color: rgba(226, 232, 240, 0.95) !important;
+    }
+    .border-white\/10 {
+        border-color: rgba(148, 163, 184, 0.4) !important;
+    }
+    .border-white\/15 {
+        border-color: rgba(148, 163, 184, 0.5) !important;
+    }
+    .border-white\/8 {
+        border-color: rgba(148, 163, 184, 0.35) !important;
+    }
+    .border-white\/5 {
+        border-color: rgba(203, 213, 225, 0.7) !important;
+    }
+    .bg-slate-900\/90 {
+        background-color: rgba(255, 255, 255, 0.98) !important;
+    }
+
+    .from-ink-950\/90 {
+        --tw-gradient-from: rgba(15, 23, 42, 0.72) var(--tw-gradient-from-position) !important;
+    }
+    .to-transparent {
+        --tw-gradient-to: transparent var(--tw-gradient-to-position) !important;
+    }
+
+    input,
+    textarea,
+    select {
+        color: #0f172a;
+    }
+    input::placeholder,
+    textarea::placeholder {
+        color: #64748b;
+    }
+
+    @media (max-width: 640px) {
+        body {
+            font-size: 15px;
+        }
+    }
+}
