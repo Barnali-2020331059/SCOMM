@@ -12,6 +12,7 @@ import Orders from './pages/Orders';
 import OrderDetail from './pages/OrderDetail';
 import AdminOrders from './pages/AdminOrders';
 import AdminAddProduct from './pages/AdminAddProduct';
+import AdminProducts from './pages/AdminProducts';
 import Profile from './pages/Profile';
 import Chat from './pages/Chat';
 import VerifyEmail from './pages/VerifyEmail';
@@ -75,6 +76,14 @@ export default function App() {
                     element={
                         <ProtectedRoute admin>
                             <AdminAddProduct />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="admin/products"
+                    element={
+                        <ProtectedRoute admin>
+                            <AdminProducts />
                         </ProtectedRoute>
                     }
                 />

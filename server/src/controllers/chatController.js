@@ -1,14 +1,14 @@
 const Groq = require('groq-sdk');
 const createError = require('http-errors');
+const mongoose = require('mongoose');
 const Product = require('../models/productModel');
 const Order = require('../models/orderModel');
 const { successResponse } = require('./responseController');
+const { broadcastNewOrder } = require('./notificationController');
 const { clientURL, stripeSecretKey } = require('../secret');
 const stripe = require('stripe')(stripeSecretKey);
 
 // ─── Multi-key Groq client with automatic rotation ───────────────────────────
-// Add keys to .env as GROQ_API_KEY_1, GROQ_API_KEY_2, etc.
-// Falls back to GROQ_API_KEY if numbered keys not set
 const buildGroqClients = () => {
     const keys = [];
     for (let i = 1; i <= 10; i++) {
@@ -44,8 +44,7 @@ const callGroq = async (params, attempt = 0) => {
     }
 };
 
-// ─── Use smarter model — better instruction following ─────────────────────────
-const MODEL = 'openai/gpt-oss-120b';
+const MODEL = 'llama-3.3-70b-versatile';
 const MAX_HISTORY_MESSAGES = 10;
 const MAX_ITERATIONS = 20;
 const CONFIRM_RE = /\b(yes|confirm|confirmed|go ahead|proceed|place it|place the order|ok|okay|sure|do it)\b/i;
@@ -80,9 +79,7 @@ const TOOLS = [
             description: 'Get full details of a specific SCOMM product by its ID.',
             parameters: {
                 type: 'object',
-                properties: {
-                    product_id: { type: 'string' },
-                },
+                properties: { product_id: { type: 'string' } },
                 required: ['product_id'],
             },
         },
@@ -171,7 +168,7 @@ const handleSearchProducts = async (input) => {
     const limit = Math.min(input.limit || 5, 8);
     let products = await Product.find(filter).limit(limit).sort({ rating: -1 });
 
-    // Fallback 1: try individual words
+    // Fallback 1: individual words
     if (!products.length && input.query) {
         const words = input.query.split(/\s+/).filter((w) => w.length > 2);
         if (words.length > 1) {
@@ -188,14 +185,13 @@ const handleSearchProducts = async (input) => {
         }
     }
 
-    // Fallback 2: top-rated from category
+    // Fallback 2: top from category
     if (!products.length && input.category) {
         products = await Product.find({ category: input.category, countInStock: { $gt: 0 } })
-            .limit(limit)
-            .sort({ rating: -1 });
+            .limit(limit).sort({ rating: -1 });
     }
 
-    // Fallback 3: all top-rated products
+    // Fallback 3: top overall
     if (!products.length) {
         products = await Product.find({ countInStock: { $gt: 0 } }).limit(5).sort({ rating: -1 });
     }
@@ -212,7 +208,6 @@ const handleSearchProducts = async (input) => {
         countInStock: p.countInStock,
         description: p.description?.slice(0, 100),
         image: p.image,
-        // url is used by the AI to reference products — internal path only
         url: `/product/${p._id}`,
     }));
 };
@@ -271,7 +266,6 @@ const handleGetOrderDetails = async (userId, input) => {
 };
 
 const handleCreateOrder = async (userId, input) => {
-    const mongoose = require('mongoose');
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
@@ -338,17 +332,24 @@ const handleCreateOrder = async (userId, input) => {
             });
         }
 
+        // success_url includes CHECKOUT_SESSION_ID so OrderDetail can confirm payment
         const stripeSession = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
             line_items: stripeLineItems,
             mode: 'payment',
-            success_url: `${clientURL}/orders/${order._id}?paid=true`,
+            success_url: `${clientURL}/orders/${order._id}?stripe_session={CHECKOUT_SESSION_ID}`,
             cancel_url: `${clientURL}/orders/${order._id}?cancelled=true`,
-            metadata: { orderId: String(order._id) },
+            metadata: {
+                orderId: String(order._id),
+                userId: String(userId),
+            },
         });
 
         await session.commitTransaction();
         session.endSession();
+
+        // ✅ Notify all connected admins in real-time
+        broadcastNewOrder(order);
 
         return {
             success: true,
@@ -368,9 +369,7 @@ const handleCreateOrder = async (userId, input) => {
 
 // ─── Execute tool ─────────────────────────────────────────────────────────────
 const executeTool = async (name, args, userId, latestUserMessage = '') => {
-    console.log("Executing Tool:", name, args); // ✅ DEBUG LOG
-    let result;
-
+    console.log('Executing Tool:', name, args);
     switch (name) {
         case 'search_products': return handleSearchProducts(args);
         case 'get_product_details': return handleGetProductDetails(args);
@@ -386,10 +385,8 @@ const executeTool = async (name, args, userId, latestUserMessage = '') => {
                 return { error: 'Awaiting confirmation. Ask user to reply "yes, confirm".' };
             return handleCreateOrder(userId, args);
         default:
-            result = { error: `Unknown tool: ${name}` };
+            return { error: `Unknown tool: ${name}` };
     }
-    console.log("Tool Result:", result); // ✅ DEBUG LOG
-    return result;
 };
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -411,10 +408,8 @@ ABSOLUTE RULES — never break these:
    c. If no shipping address provided, ask for: full name, street address, city, postal code, country
    d. Call create_order ONLY after explicit confirmation
 8. Keep responses friendly and concise.
-9. You MUST ONLY reference and tag products that are directly relevant to the user's latest request.
-10. NEVER include or mention products from previous searches unless the user explicitly asks.
-11. If the user asks about a single product, ONLY show that product — no additional items.
-12. If no relevant products are found, say so clearly instead of showing unrelated items.
+9. ONLY reference products relevant to the user's latest request.
+10. If no relevant products found, say so clearly.
 
 Store: Electronics, Fashion, Home & Living, Sports, Beauty, Books. Free shipping over $100, else $9.99. 8% tax. 30-day returns.`;
 
@@ -424,36 +419,28 @@ const trimHistory = (messages) => {
     return [messages[0], ...messages.slice(-(MAX_HISTORY_MESSAGES - 1))];
 };
 
-// ─── Extract [PRODUCT:id] tags from AI text ───────────────────────────────────
-const PRODUCT_TAG_RE = /\[PRODUCT:([a-f0-9]{24})\]/gi;
-
+// ─── Extract [PRODUCT:id] tags ────────────────────────────────────────────────
 const extractProductIds = (text) => {
     const ids = [];
+    const re = /\[PRODUCT:([a-f0-9]{24})\]/gi;
     let match;
-    while ((match = PRODUCT_TAG_RE.exec(text)) !== null) {
+    while ((match = re.exec(text)) !== null) {
         if (!ids.includes(match[1])) ids.push(match[1]);
     }
     return ids;
 };
 
-// ─── Strip all internal tags and leaked syntax from text ─────────────────────
-const sanitizeText = (text) => {
-    return text
-        // Remove [PRODUCT:id] tags
+// ─── Strip internal tags and leaked syntax ────────────────────────────────────
+const sanitizeText = (text) =>
+    text
         .replace(/\[PRODUCT:[a-f0-9]{24}\]/gi, '')
-        // Remove {{PRODUCT_ID:...}} legacy tags
         .replace(/\{\{PRODUCT_ID:[^}]+\}\}/gi, '')
-        // Remove leaked function call syntax like <function=...>{...}</function>
         .replace(/<function=[^>]+>[\s\S]*?<\/function>/gi, '')
-        // Remove raw JSON-like blobs that start with { and have quotes
         .replace(/\{"[^}]{0,200}"\}/g, '')
-        // Remove bare URLs (we show product cards instead)
         .replace(/https?:\/\/[^\s)>]+/gi, '')
-        // Clean up multiple spaces/newlines left behind
         .replace(/[ \t]{2,}/g, ' ')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-};
 
 // ─── Main chat handler ────────────────────────────────────────────────────────
 const chat = async (req, res, next) => {
@@ -479,7 +466,7 @@ const chat = async (req, res, next) => {
             const response = await callGroq({
                 model: MODEL,
                 max_tokens: 700,
-                temperature: 0.2, // lower = more obedient to instructions
+                temperature: 0.2,
                 messages: [
                     { role: 'system', content: buildSystemPrompt(user) },
                     ...currentMessages,
@@ -491,9 +478,6 @@ const chat = async (req, res, next) => {
             const choice = response.choices[0];
             const assistantMessage = choice.message;
 
-            console.log("Assistant Message:", assistantMessage); // ✅ DEBUG LOG
-
-
             if (assistantMessage.content) finalText = assistantMessage.content;
             if (!assistantMessage.tool_calls?.length) break;
 
@@ -504,19 +488,11 @@ const chat = async (req, res, next) => {
             });
 
             for (const toolCall of assistantMessage.tool_calls) {
-
-                console.log(
-                    "Tool Call:",
-                    toolCall.function.name,
-                    toolCall.function.arguments
-                ); // ✅ DEBUG LOG
-
                 let args = {};
                 try { args = JSON.parse(toolCall.function.arguments); } catch { /* ignore */ }
 
                 const result = await executeTool(toolCall.function.name, args, userId, latestUserMessage);
 
-                // Collect all products from tool results
                 if (Array.isArray(result)) {
                     allSearchedProducts = [...allSearchedProducts, ...result];
                 } else if (result?.id && result?.name) {
@@ -535,28 +511,17 @@ const chat = async (req, res, next) => {
             }
         }
 
-        console.log("Final Raw Text:", finalText); // ✅ DEBUG LOG
-
-        // Build product map
         const productMap = new Map(allSearchedProducts.map((p) => [String(p.id || p._id), p]));
-
-        // Extract products the AI tagged in its response
-        // Reset regex lastIndex before use
-        PRODUCT_TAG_RE.lastIndex = 0;
         const mentionedIds = extractProductIds(finalText);
         let productsToShow = mentionedIds.map((id) => productMap.get(id)).filter(Boolean);
 
-        // Fallback: show all searched products if none were tagged
         if (!productsToShow.length && allSearchedProducts.length > 0) {
             productsToShow = allSearchedProducts.slice(0, 5);
         }
 
-        // Clean the text — remove all tags, leaked syntax, bare URLs
-        const cleanedText = sanitizeText(finalText);
-
         return successResponse(res, {
             payload: {
-                message: cleanedText,
+                message: sanitizeText(finalText),
                 products: productsToShow,
                 checkoutUrl: checkoutUrl || null,
             },

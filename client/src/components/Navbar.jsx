@@ -3,6 +3,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { useNotifications } from '../hooks/useNotifications';
 import { toMediaUrl } from '../utils/mediaUrl';
 
 const linkClass = ({ isActive }) =>
@@ -10,6 +11,128 @@ const linkClass = ({ isActive }) =>
         isActive ? 'text-slate-900 bg-white/95' : 'text-slate-600 hover:text-slate-900 hover:bg-white/95'
     }`;
 
+// ─── Notification bell (admin only) ──────────────────────────────────────────
+function NotificationBell() {
+    const { notifications, unreadCount, markAllRead, clearAll } = useNotifications();
+    const [open, setOpen] = useState(false);
+    const ref = useRef();
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        const handler = (e) => {
+            if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const handleOpen = () => {
+        setOpen((p) => !p);
+        if (!open) markAllRead();
+    };
+
+    return (
+        <div className="relative" ref={ref}>
+            <button
+                type="button"
+                onClick={handleOpen}
+                className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-white/90 border border-slate-200 hover:bg-white transition-colors"
+                title="Notifications"
+            >
+                <span className="text-lg">🔔</span>
+                {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[1.125rem] h-[1.125rem] px-1 flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                )}
+            </button>
+
+            <AnimatePresence>
+                {open && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute right-0 mt-2 w-80 rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden z-50"
+                    >
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                            <p className="text-sm font-semibold text-slate-800">
+                                Notifications
+                                {notifications.length > 0 && (
+                                    <span className="ml-2 text-xs text-slate-400 font-normal">
+                                        ({notifications.length})
+                                    </span>
+                                )}
+                            </p>
+                            {notifications.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={clearAll}
+                                    className="text-xs text-slate-400 hover:text-red-400 transition-colors"
+                                >
+                                    Clear all
+                                </button>
+                            )}
+                        </div>
+
+                        {/* List */}
+                        <div className="max-h-80 overflow-y-auto">
+                            {notifications.length === 0 ? (
+                                <div className="px-4 py-8 text-center text-slate-400">
+                                    <p className="text-2xl mb-2">🔔</p>
+                                    <p className="text-xs">No notifications yet</p>
+                                    <p className="text-xs text-slate-300 mt-1">New orders will appear here</p>
+                                </div>
+                            ) : (
+                                notifications.map((n) => (
+                                    <button
+                                        key={n.id}
+                                        type="button"
+                                        onClick={() => { setOpen(false); navigate(`/orders/${n.orderId}`); }}
+                                        className="w-full text-left px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors"
+                                    >
+                                        <div className="flex items-start gap-3">
+                                            <span className="text-lg flex-shrink-0 mt-0.5">📦</span>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-xs font-semibold text-slate-800">
+                                                    New order received!
+                                                </p>
+                                                <p className="text-xs text-slate-500 mt-0.5">
+                                                    ${Number(n.totalPrice).toFixed(2)} · {n.itemCount} item{n.itemCount !== 1 ? 's' : ''}
+                                                </p>
+                                                <p className="text-[10px] text-slate-400 mt-1">
+                                                    {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    {' · '}
+                                                    {new Date(n.createdAt).toLocaleDateString()}
+                                                </p>
+                                            </div>
+                                            <span className="text-xs text-accent-mint font-medium flex-shrink-0">View →</span>
+                                        </div>
+                                    </button>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-4 py-2.5 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => { setOpen(false); navigate('/admin/orders'); }}
+                                className="text-xs text-accent-mint hover:text-accent-violet transition-colors font-medium"
+                            >
+                                View all orders →
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+}
+
+// ─── Main Navbar ──────────────────────────────────────────────────────────────
 export default function Navbar() {
     const { user, logout } = useAuth();
     const { count } = useCart();
@@ -17,12 +140,9 @@ export default function Navbar() {
     const adminRef = useRef();
     const navigate = useNavigate();
 
-    // Close dropdown on outside click
     useEffect(() => {
         const handler = (e) => {
-            if (adminRef.current && !adminRef.current.contains(e.target)) {
-                setAdminOpen(false);
-            }
+            if (adminRef.current && !adminRef.current.contains(e.target)) setAdminOpen(false);
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
@@ -51,21 +171,16 @@ export default function Navbar() {
                 <nav className="hidden md:flex items-center gap-1">
                     <NavLink to="/" className={linkClass} end>Home</NavLink>
                     <NavLink to="/shop" className={linkClass}>Shop</NavLink>
-
-                    {/* AI Chat link */}
                     <NavLink
                         to="/chat"
                         className={({ isActive }) =>
                             `px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                                isActive
-                                    ? 'text-slate-900 bg-white/95'
-                                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/95'
+                                isActive ? 'text-slate-900 bg-white/95' : 'text-slate-600 hover:text-slate-900 hover:bg-white/95'
                             }`
                         }
                     >
                         <span className="text-accent-mint">✦</span> AI Chat
                     </NavLink>
-
                     {user && <NavLink to="/orders" className={linkClass}>Orders</NavLink>}
 
                     {/* Admin dropdown */}
@@ -75,9 +190,7 @@ export default function Navbar() {
                                 type="button"
                                 onClick={() => setAdminOpen((p) => !p)}
                                 className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                                    adminOpen
-                                        ? 'text-slate-900 bg-white/95'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/95'
+                                    adminOpen ? 'text-slate-900 bg-white/95' : 'text-slate-600 hover:text-slate-900 hover:bg-white/95'
                                 }`}
                             >
                                 Admin
@@ -95,6 +208,7 @@ export default function Navbar() {
                                         {[
                                             { to: '/admin/orders', label: '📦 Manage Orders' },
                                             { to: '/admin/products/new', label: '＋ Add Product' },
+                                            { to: '/admin/products', label: '✏️ Edit Products' },
                                         ].map(({ to, label }) => (
                                             <button
                                                 key={to}
@@ -113,6 +227,9 @@ export default function Navbar() {
                 </nav>
 
                 <div className="flex items-center gap-2 sm:gap-3">
+                    {/* Admin notification bell */}
+                    {user?.isAdmin && <NotificationBell />}
+
                     {/* Cart */}
                     <Link
                         to="/cart"
@@ -178,6 +295,7 @@ export default function Navbar() {
                 {user && <NavLink to="/profile" className={linkClass}>Profile</NavLink>}
                 {user?.isAdmin && <NavLink to="/admin/orders" className={linkClass}>Admin Orders</NavLink>}
                 {user?.isAdmin && <NavLink to="/admin/products/new" className={linkClass}>Add Product</NavLink>}
+                {user?.isAdmin && <NavLink to="/admin/products" className={linkClass}>Edit Products</NavLink>}
             </div>
         </motion.header>
     );

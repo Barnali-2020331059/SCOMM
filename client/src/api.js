@@ -106,3 +106,4 @@ export async function chatProducts(message) {
     const { data } = await api.post('/chat/products', { message });
     return data.payload;
 }
+

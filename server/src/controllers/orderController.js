@@ -4,6 +4,7 @@ const Order = require('../models/orderModel');
 const Product = require('../models/productModel');
 const { successResponse } = require('./responseController');
 const findWithId = require('../services/findItem');
+const { broadcastNewOrder } = require('./notificationController');
 
 const createOrder = async (req, res, next) => {
     const session = await mongoose.startSession();
@@ -61,6 +62,9 @@ const createOrder = async (req, res, next) => {
 
         await session.commitTransaction();
         session.endSession();
+
+        // Broadcast real-time notification to all connected admins
+        broadcastNewOrder(order);
 
         return successResponse(res, {
             status: 201,
@@ -128,7 +132,7 @@ const markOrderPaid = async (req, res, next) => {
         await order.save();
         return successResponse(res, {
             status: 200,
-            message: 'Payment recorded (demo)',
+            message: 'Payment recorded',
             payload: { order },
         });
     } catch (e) {

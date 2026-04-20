@@ -13,16 +13,17 @@ const productRouter = require('./routers/productRouter');
 const orderRouter = require('./routers/orderRouter');
 const chatRouter = require('./routers/chatRouter');
 const stripeRouter = require('./routers/stripeRouter');
+const notificationRouter = require('./routers/notificationRouter');
 
 const { clientURL } = require('./secret');
 const { errorResponse } = require('./controllers/responseController');
 
 const app = express();
 
-// ── Static files ─────────────────────────────────────────────────────────────
+// ── Static files ──────────────────────────────────────────────────────────────
 app.use('/images', express.static(path.join(__dirname, '../public/images')));
 
-// ── Stripe webhook — MUST be before bodyParser (needs raw body) ───────────────
+// ── Stripe webhook MUST come before bodyParser (needs raw body) ───────────────
 app.use('/api/stripe', stripeRouter);
 
 // ── Middleware ────────────────────────────────────────────────────────────────
@@ -47,13 +48,13 @@ app.use(bodyParser.json({ limit: '5mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '5mb' }));
 app.use(rateLimiter);
 
-
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/users', userRouter);
 app.use('/api/seed', seedRouter);
 app.use('/api/products', productRouter);
 app.use('/api/orders', orderRouter);
 app.use('/api/chat', chatRouter);
+app.use('/api/notifications', notificationRouter);
 
 // ── Error handlers ────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
