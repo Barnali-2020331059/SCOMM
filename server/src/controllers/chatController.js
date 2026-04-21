@@ -44,7 +44,7 @@ const callGroq = async (params, attempt = 0) => {
     }
 };
 
-const MODEL = 'llama-3.3-70b-versatile';
+const MODEL = 'openai/gpt-oss-120b';
 const MAX_HISTORY_MESSAGES = 10;
 const MAX_ITERATIONS = 20;
 const CONFIRM_RE = /\b(yes|confirm|confirmed|go ahead|proceed|place it|place the order|ok|okay|sure|do it)\b/i;
