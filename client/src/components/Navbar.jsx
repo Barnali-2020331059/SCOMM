@@ -59,7 +59,7 @@ function NotificationBell() {
                         {/* Header */}
                         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                             <p className="text-sm font-semibold text-slate-800">
-                                Notifications
+                                Orders
                                 {notifications.length > 0 && (
                                     <span className="ml-2 text-xs text-slate-400 font-normal">
                                         ({notifications.length})
@@ -78,37 +78,60 @@ function NotificationBell() {
                         </div>
 
                         {/* List */}
-                        <div className="max-h-80 overflow-y-auto">
+                        <div className="max-h-80 overflow-y-auto divide-y divide-slate-50">
                             {notifications.length === 0 ? (
                                 <div className="px-4 py-8 text-center text-slate-400">
                                     <p className="text-2xl mb-2">🔔</p>
-                                    <p className="text-xs">No notifications yet</p>
-                                    <p className="text-xs text-slate-300 mt-1">New orders will appear here</p>
+                                    <p className="text-xs">No orders yet</p>
+                                    <p className="text-xs text-slate-300 mt-1">
+                                        New orders will appear here
+                                    </p>
                                 </div>
                             ) : (
                                 notifications.map((n) => (
                                     <button
                                         key={n.id}
                                         type="button"
-                                        onClick={() => { setOpen(false); navigate(`/orders/${n.orderId}`); }}
-                                        className="w-full text-left px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors"
+                                        onClick={() => {
+                                            setOpen(false);
+                                            navigate(`/orders/${n.orderId}`);
+                                        }}
+                                        className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors"
                                     >
                                         <div className="flex items-start gap-3">
-                                            <span className="text-lg flex-shrink-0 mt-0.5">📦</span>
+                                            <span className="text-base flex-shrink-0 mt-0.5">
+                                                {n.isPaid ? '✅' : '📦'}
+                                            </span>
                                             <div className="flex-1 min-w-0">
                                                 <p className="text-xs font-semibold text-slate-800">
-                                                    New order received!
+                                                    {n.fromCatchup ? 'Order' : 'New order!'}
+                                                    {n.userName ? ` from ${n.userName}` : ''}
                                                 </p>
                                                 <p className="text-xs text-slate-500 mt-0.5">
-                                                    ${Number(n.totalPrice).toFixed(2)} · {n.itemCount} item{n.itemCount !== 1 ? 's' : ''}
+                                                    ${Number(n.totalPrice).toFixed(2)} ·{' '}
+                                                    {n.itemCount} item{n.itemCount !== 1 ? 's' : ''} ·{' '}
+                                                    <span
+                                                        className={
+                                                            n.isPaid
+                                                                ? 'text-green-500'
+                                                                : 'text-amber-500'
+                                                        }
+                                                    >
+                                                        {n.isPaid ? 'Paid' : 'Unpaid'}
+                                                    </span>
                                                 </p>
-                                                <p className="text-[10px] text-slate-400 mt-1">
-                                                    {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                    {' · '}
-                                                    {new Date(n.createdAt).toLocaleDateString()}
+                                                <p className="text-[10px] text-slate-400 mt-0.5">
+                                                    {new Date(n.createdAt).toLocaleString([], {
+                                                        month: 'short',
+                                                        day: 'numeric',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit',
+                                                    })}
                                                 </p>
                                             </div>
-                                            <span className="text-xs text-accent-mint font-medium flex-shrink-0">View →</span>
+                                            <span className="text-xs text-accent-mint font-medium flex-shrink-0">
+                                                View →
+                                            </span>
                                         </div>
                                     </button>
                                 ))
@@ -119,7 +142,10 @@ function NotificationBell() {
                         <div className="px-4 py-2.5 border-t border-slate-100">
                             <button
                                 type="button"
-                                onClick={() => { setOpen(false); navigate('/admin/orders'); }}
+                                onClick={() => {
+                                    setOpen(false);
+                                    navigate('/admin/orders');
+                                }}
                                 className="text-xs text-accent-mint hover:text-accent-violet transition-colors font-medium"
                             >
                                 View all orders →
@@ -142,7 +168,9 @@ export default function Navbar() {
 
     useEffect(() => {
         const handler = (e) => {
-            if (adminRef.current && !adminRef.current.contains(e.target)) setAdminOpen(false);
+            if (adminRef.current && !adminRef.current.contains(e.target)) {
+                setAdminOpen(false);
+            }
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
@@ -175,7 +203,9 @@ export default function Navbar() {
                         to="/chat"
                         className={({ isActive }) =>
                             `px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                                isActive ? 'text-slate-900 bg-white/95' : 'text-slate-600 hover:text-slate-900 hover:bg-white/95'
+                                isActive
+                                    ? 'text-slate-900 bg-white/95'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/95'
                             }`
                         }
                     >
@@ -190,11 +220,19 @@ export default function Navbar() {
                                 type="button"
                                 onClick={() => setAdminOpen((p) => !p)}
                                 className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                                    adminOpen ? 'text-slate-900 bg-white/95' : 'text-slate-600 hover:text-slate-900 hover:bg-white/95'
+                                    adminOpen
+                                        ? 'text-slate-900 bg-white/95'
+                                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/95'
                                 }`}
                             >
                                 Admin
-                                <span className={`text-[10px] transition-transform ${adminOpen ? 'rotate-180' : ''}`}>▾</span>
+                                <span
+                                    className={`text-[10px] transition-transform ${
+                                        adminOpen ? 'rotate-180' : ''
+                                    }`}
+                                >
+                                    ▾
+                                </span>
                             </button>
                             <AnimatePresence>
                                 {adminOpen && (
@@ -213,7 +251,10 @@ export default function Navbar() {
                                             <button
                                                 key={to}
                                                 type="button"
-                                                onClick={() => { navigate(to); setAdminOpen(false); }}
+                                                onClick={() => {
+                                                    navigate(to);
+                                                    setAdminOpen(false);
+                                                }}
                                                 className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-colors"
                                             >
                                                 {label}
@@ -251,7 +292,11 @@ export default function Navbar() {
                             >
                                 <div className="w-6 h-6 rounded-md overflow-hidden bg-slate-100 flex items-center justify-center flex-shrink-0 border border-slate-200">
                                     {user.image ? (
-                                        <img src={toMediaUrl(user.image)} alt="" className="w-full h-full object-cover" />
+                                        <img
+                                            src={toMediaUrl(user.image)}
+                                            alt=""
+                                            className="w-full h-full object-cover"
+                                        />
                                     ) : (
                                         <span className="text-[10px] font-bold text-slate-400">
                                             {user.name?.charAt(0).toUpperCase()}
@@ -272,7 +317,10 @@ export default function Navbar() {
                         </div>
                     ) : (
                         <>
-                            <Link to="/login" className="text-sm px-3 py-2 rounded-lg text-slate-700 hover:text-slate-900">
+                            <Link
+                                to="/login"
+                                className="text-sm px-3 py-2 rounded-lg text-slate-700 hover:text-slate-900"
+                            >
                                 Sign in
                             </Link>
                             <Link
@@ -293,9 +341,15 @@ export default function Navbar() {
                 <NavLink to="/chat" className={linkClass}>✦ AI Chat</NavLink>
                 {user && <NavLink to="/orders" className={linkClass}>Orders</NavLink>}
                 {user && <NavLink to="/profile" className={linkClass}>Profile</NavLink>}
-                {user?.isAdmin && <NavLink to="/admin/orders" className={linkClass}>Admin Orders</NavLink>}
-                {user?.isAdmin && <NavLink to="/admin/products/new" className={linkClass}>Add Product</NavLink>}
-                {user?.isAdmin && <NavLink to="/admin/products" className={linkClass}>Edit Products</NavLink>}
+                {user?.isAdmin && (
+                    <NavLink to="/admin/orders" className={linkClass}>Admin Orders</NavLink>
+                )}
+                {user?.isAdmin && (
+                    <NavLink to="/admin/products/new" className={linkClass}>Add Product</NavLink>
+                )}
+                {user?.isAdmin && (
+                    <NavLink to="/admin/products" className={linkClass}>Edit Products</NavLink>
+                )}
             </div>
         </motion.header>
     );

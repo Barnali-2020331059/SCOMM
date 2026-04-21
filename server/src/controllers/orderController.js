@@ -63,8 +63,13 @@ const createOrder = async (req, res, next) => {
         await session.commitTransaction();
         session.endSession();
 
-        // Broadcast real-time notification to all connected admins
-        broadcastNewOrder(order);
+        // ✅ Attach user name so the notification shows who placed the order
+        const orderForBroadcast = order.toObject();
+        orderForBroadcast.user = {
+            _id: req.user._id,
+            name: req.user.name,
+        };
+        broadcastNewOrder(orderForBroadcast);
 
         return successResponse(res, {
             status: 201,
