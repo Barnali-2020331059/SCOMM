@@ -59,8 +59,8 @@ export default function Home() {
                             <span className="text-gradient">alive</span>.
                         </h1>
                         <p className="mt-6 text-lg text-slate-600 max-w-xl">
-                            Discover electronics, fashion, home goods, and more — with a storefront
-                            built on the MERN stack, ready to run locally or deploy.
+                        Find everything you love — from electronics to fashion and home essentials
+                         — all in one convenient and delightful shopping experience.
                         </p>
                         <div className="mt-10 flex flex-wrap gap-4">
                             <Link
