@@ -1,64 +1,91 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 const MAX_NOTIFICATIONS = 50;
 
-// Per-admin storage key so different admins don't share notifications
 const getStorageKey = (user) =>
     user?.email ? `scomm_notifications_${user.email}` : null;
 
+// Separate key to track when admin last opened the bell
+const getLastSeenKey = (user) =>
+    user?.email ? `scomm_notifications_lastseen_${user.email}` : null;
+
 const loadFromStorage = (key) => {
-    if (!key) return { notifications: [], unreadCount: 0 };
+    if (!key) return { notifications: [] };
     try {
         const raw = localStorage.getItem(key);
-        if (!raw) return { notifications: [], unreadCount: 0 };
-        return JSON.parse(raw);
+        if (!raw) return { notifications: [] };
+        const parsed = JSON.parse(raw);
+        // Strip old unreadCount — we now compute it dynamically from lastSeen
+        return { notifications: parsed.notifications || parsed || [] };
     } catch {
-        return { notifications: [], unreadCount: 0 };
+        return { notifications: [] };
     }
 };
 
-const saveToStorage = (key, notifications, unreadCount) => {
+const saveToStorage = (key, notifications) => {
     if (!key) return;
     try {
-        localStorage.setItem(key, JSON.stringify({ notifications, unreadCount }));
+        localStorage.setItem(key, JSON.stringify({ notifications }));
+    } catch { /* ignore */ }
+};
+
+const loadLastSeen = (key) => {
+    if (!key) return 0;
+    try {
+        return parseInt(localStorage.getItem(key) || '0', 10);
+    } catch {
+        return 0;
+    }
+};
+
+const saveLastSeen = (key, ts) => {
+    if (!key) return;
+    try {
+        localStorage.setItem(key, String(ts));
     } catch { /* ignore */ }
 };
 
 export function useNotifications() {
     const { user } = useAuth();
     const storageKey = getStorageKey(user);
+    const lastSeenKey = getLastSeenKey(user);
 
-    // Load initial state from localStorage
-    const [state, setState] = useState(() => loadFromStorage(storageKey));
-    const stateRef = useRef(state);
-    stateRef.current = state;
+    const [notifications, setNotifications] = useState([]);
+    const [lastSeen, setLastSeen] = useState(0);
 
-    // Reload from storage when user changes (login/logout/switch)
+    // Load from storage when user changes
     useEffect(() => {
-        const loaded = loadFromStorage(storageKey);
-        setState(loaded);
-    }, [storageKey]);
+        const { notifications: stored } = loadFromStorage(storageKey);
+        const ls = loadLastSeen(lastSeenKey);
+        setNotifications(stored);
+        setLastSeen(ls);
+    }, [storageKey, lastSeenKey]);
 
-    // Persist to localStorage whenever state changes
+    // Persist notifications when they change
     useEffect(() => {
-        saveToStorage(storageKey, state.notifications, state.unreadCount);
-    }, [state, storageKey]);
+        saveToStorage(storageKey, notifications);
+    }, [notifications, storageKey]);
 
-    // Add a single new notification (deduplicate by orderId)
+    // ✅ Unread count = orders newer than lastSeen timestamp
+    const unreadCount = notifications.filter(
+        (n) => new Date(n.createdAt).getTime() > lastSeen
+    ).length;
+
+    // Add a single live notification (from new_order SSE event)
     const addNotification = useCallback((notification) => {
-        setState((prev) => {
-            const alreadyExists = prev.notifications.some((n) => n.id === notification.id);
+        setNotifications((prev) => {
+            const alreadyExists = prev.some((n) => n.id === notification.id);
             if (alreadyExists) return prev;
-            const updated = [notification, ...prev.notifications].slice(0, MAX_NOTIFICATIONS);
-            return { notifications: updated, unreadCount: prev.unreadCount + 1 };
+            return [notification, ...prev].slice(0, MAX_NOTIFICATIONS);
         });
     }, []);
 
-    // Merge catchup orders — add any that aren't already stored, don't increment unread
+    // Merge catchup orders — silently add historical orders without marking as unread
+    // Only orders newer than lastSeen will appear in unreadCount automatically
     const mergeCatchup = useCallback((orders) => {
-        setState((prev) => {
-            const existingIds = new Set(prev.notifications.map((n) => n.id));
+        setNotifications((prev) => {
+            const existingIds = new Set(prev.map((n) => n.id));
             const newOnes = orders
                 .filter((o) => !existingIds.has(o._id))
                 .map((o) => ({
@@ -70,28 +97,30 @@ export function useNotifications() {
                     isPaid: o.isPaid,
                     userName: o.userName || '',
                     createdAt: o.createdAt,
-                    // catchup orders are "read" already — don't bump badge
                     fromCatchup: true,
                 }));
 
             if (!newOnes.length) return prev;
 
-            const merged = [...prev.notifications, ...newOnes]
+            return [...prev, ...newOnes]
                 .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
                 .slice(0, MAX_NOTIFICATIONS);
-
-            // Don't add to unreadCount for catchup orders
-            return { notifications: merged, unreadCount: prev.unreadCount };
         });
     }, []);
 
+    // Mark all read — save current timestamp as lastSeen
     const markAllRead = useCallback(() => {
-        setState((prev) => ({ ...prev, unreadCount: 0 }));
-    }, []);
+        const now = Date.now();
+        setLastSeen(now);
+        saveLastSeen(lastSeenKey, now);
+    }, [lastSeenKey]);
 
     const clearAll = useCallback(() => {
-        setState({ notifications: [], unreadCount: 0 });
-    }, []);
+        setNotifications([]);
+        const now = Date.now();
+        setLastSeen(now);
+        saveLastSeen(lastSeenKey, now);
+    }, [lastSeenKey]);
 
     // SSE connection
     useEffect(() => {
@@ -124,7 +153,7 @@ export function useNotifications() {
 
                     buffer += decoder.decode(value, { stream: true });
                     const lines = buffer.split('\n');
-                    buffer = lines.pop(); // keep incomplete line
+                    buffer = lines.pop();
 
                     for (const line of lines) {
                         if (!line.startsWith('data: ')) continue;
@@ -153,7 +182,6 @@ export function useNotifications() {
                 }
             } catch {
                 if (!active) return;
-                // Retry after 5s on connection error
                 retryTimeout = setTimeout(() => { if (active) connect(); }, 5000);
             }
         };
@@ -167,8 +195,8 @@ export function useNotifications() {
     }, [user, addNotification, mergeCatchup]);
 
     return {
-        notifications: state.notifications,
-        unreadCount: state.unreadCount,
+        notifications,
+        unreadCount,
         markAllRead,
         clearAll,
     };
